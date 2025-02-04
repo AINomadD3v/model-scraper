@@ -1,0 +1,85 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environment
+venv/
+.env/
+env/
+.venv/
+
+# Distribution / packaging
+build/
+dist/
+*.egg-info/
+*.egg
+
+# Logs and debugging
+logs/
+*.log
+debug.log
+
+# Jupyter Notebook checkpoints
+.ipynb_checkpoints/
+
+# Cache
+.cache/
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Pytest cache
+.pytest_cache/
+
+# MyPy
+.mypy_cache/
+
+# VSCode settings
+.vscode/
+
+# PyCharm settings
+.idea/
+
+# MacOS files
+.DS_Store
+
+# Docker
+*.dockerfile
+
+# Environment variables
+.env
+*.env
+
+# Coverage reports
+htmlcov/
+coverage.xml
+*.cover
+*.py,cover
+.coverage
+nosetests.xml
+*.mo
+*.pot
+
+# Celery task queue
+celerybeat-schedule
+celerybeat.pid
+
+# Database files
+*.sqlite3
+*.db
+
+# Sphinx documentation
+docs/_build/
+
+# Local tool configuration
+*.toml
+*.ini
+
+# Ignore gunicorn logs
+gunicorn.log
+gunicorn.error.log
+
+# Ignore Terraform state files
+*.tfstate
+*.tfstate.backup
+
