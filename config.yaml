@@ -1,0 +1,34 @@
+# ./config.yaml
+
+# Logging configuration
+logging:
+  file_path: "./logs/scraper.log"  # Changed to local project directory
+  level: "INFO"
+  max_size: 10485760  # 10MB in bytes
+  backup_count: 5     # Number of backup files to keep
+
+# Rate limiting settings
+rate_limits:
+  requests_per_minute: 240  # API limit
+  delay_between_accounts: 2.0  # Seconds
+  delay_between_posts: 0.5    # Seconds
+
+# Airtable configuration
+airtable:
+  api_key: "${AIRTABLE_API_KEY}"
+  bases:
+    maddison:  # First base using existing env vars
+      base_id: "${MADDISON_BASE_ID}"
+      active_accounts_table: "${MADDISON_ACTIVE_ACCOUNTS_TABLE_ID}"
+      content_table: "${MADDISON_POSTED_CONTENT_TABLE_ID}"
+
+    # Example of how to add additional bases:
+    # second_base:
+    #   base_id: "${SECOND_BASE_ID}"
+    #   active_accounts_table: "${SECOND_BASE_ACCOUNTS_TABLE}"
+    #   content_table: "${SECOND_BASE_CONTENT_TABLE}"
+
+# Instagram API configuration
+instagram:
+  api_key: "${RAPIDAPI_KEY}"
+  host: "instagram-scraper-api2.p.rapidapi.com"

@@ -26,6 +26,7 @@
   };
 
   pythonWithPackages = pkgs.python3.withPackages (ps: with ps; [
+    pyyaml
     pyairtable
     google-auth-oauthlib
     google-auth-httplib2
