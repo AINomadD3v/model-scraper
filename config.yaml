@@ -21,12 +21,15 @@ airtable:
       base_id: "${MADDISON_BASE_ID}"
       active_accounts_table: "${MADDISON_ACTIVE_ACCOUNTS_TABLE_ID}"
       content_table: "${MADDISON_POSTED_CONTENT_TABLE_ID}"
+      view_history: "${MASSISON_VIEW_HISTORY_TABLE_ID}"
 
     # Example of how to add additional bases:
     # second_base:
-    #   base_id: "${SECOND_BASE_ID}"
-    #   active_accounts_table: "${SECOND_BASE_ACCOUNTS_TABLE}"
-    #   content_table: "${SECOND_BASE_CONTENT_TABLE}"
+    #   base_id: "${ALEXIS_BASE_ID}"
+    #   active_accounts_table: "${ALEXIS_ACTIVE_ACCOUNTS_TABLE_ID}"
+    #   content_table: "${ALEXIS_POSTED_CONTENT_TABLE_ID}"
+    #   view_history: "${ALEXIS_VIEW_HISTORY_TABLE_ID}"
+
 
 # Instagram API configuration
 instagram:

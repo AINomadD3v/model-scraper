@@ -193,28 +193,43 @@ class InstagramAPI:
         self.logger.info(f"Fetching posts for {username}")
         endpoint = f"/v1/posts?username_or_id_or_url={username}"
         response = self._make_request(endpoint)
-
         if not response or 'data' not in response:
             return {'status': 'ok', 'items': []}
-
         raw_items = response.get('data', {}).get('items', [])
+        
+        # Debug log
+        self.logger.info(f"First item play_count: {raw_items[0].get('play_count') if raw_items else 'No items'}")
+        self.logger.info(f"First item ig_play_count: {raw_items[0].get('ig_play_count') if raw_items else 'No items'}")
+        
         posts = []
-
         for item in raw_items:
+            # Get play count with debug logging
+            play_count = item.get('play_count', 0)
+            ig_play_count = item.get('ig_play_count', 0)
+            final_play_count = play_count or ig_play_count
+            
+            self.logger.info(f"Processing item {item.get('id')}:")
+            self.logger.info(f"  - play_count: {play_count}")
+            self.logger.info(f"  - ig_play_count: {ig_play_count}")
+            self.logger.info(f"  - final_play_count: {final_play_count}")
+            
             post = {
                 'id': item.get('id'),
                 'caption': item.get('caption', {}).get('text', '') if isinstance(item.get('caption'), dict) else item.get('caption', ''),
                 'like_count': item.get('like_count', 0),
                 'comment_count': item.get('comment_count', 0),
-                'media_type': 'Reel' if item.get('is_video', False) else 'Image',
+                'media_type': 'Reel' if item.get('media_type') == 2 else 'Image',
                 'timestamp': item.get('taken_at'),
                 'video_url': item.get('video_url', ''),
                 'thumbnail_url': item.get('thumbnail_url') or item.get('image_versions2', {}).get('candidates', [{}])[0].get('url', ''),
                 'view_count': item.get('view_count', 0),
-                'play_count': item.get('play_count', 0)
+                'play_count': final_play_count
             }
             posts.append(post)
-
+            
+            # Debug log the post
+            self.logger.info(f"Created post object with play_count: {post['play_count']}")
+            
         return {'status': 'ok', 'items': posts}
 
 class AirtableClient:
@@ -256,6 +271,38 @@ class AirtableClient:
         except Exception as e:
             self.logger.error(f"Failed to fetch active accounts: {e}")
             raise  # Add raise here to see the actual error
+
+    def update_historical_views(self) -> None:
+        """Update historical view counts"""
+        self.logger.info("Updating historical view counts")
+        try:
+            records = self.content_table.all()
+            updates = []
+            
+            for record in records:
+                fields = record.get('fields', {})
+                current_views = fields.get('Views', fields.get('View Count'))
+                
+                if current_views is not None:
+                    updates.append({
+                        'id': record['id'],
+                        'fields': {
+                            'Previous Views': current_views
+                        }
+                    })
+            
+            batch_size = 10
+            for i in range(0, len(updates), batch_size):
+                batch = updates[i:i + batch_size]
+                self.content_table.batch_update(batch)
+                self.logger.debug(f"Updated batch {i//batch_size + 1}")
+                time.sleep(1)  # Rate limiting
+            
+            self.logger.info(f"Updated {len(updates)} records with historical views")
+            
+        except Exception as e:
+            self.logger.error(f"Failed to update historical views: {e}")
+            raise
 
     def update_account(self, account_id: str, account_data: Dict[str, Any]) -> bool:
         """Update account information"""
@@ -317,7 +364,8 @@ class AirtableClient:
             'Media Type': formatted_media_type,
             'Comments': post_data.get('comment_count'),
             'Content': [{"url": post_data.get('video_url')}] if post_data.get('video_url') else None,
-            'Thumbnail': [{"url": post_data.get('thumbnail_url')}] if post_data.get('thumbnail_url') else None
+            'Thumbnail': [{"url": post_data.get('thumbnail_url')}] if post_data.get('thumbnail_url') else None,
+            'Views': post_data.get('play_count', 0)  # Added this line
         }
 
     @staticmethod
@@ -373,6 +421,10 @@ class InstagramScraper:
         """Process all accounts in a single base"""
         self.logger.debug(f"Entering process_base for {base_name}")
         try:
+            # First, update historical views
+            self.logger.info(f"Updating historical views for base: {base_name}")
+            airtable_client.update_historical_views()
+
             self.logger.debug("About to call get_active_accounts")
             active_accounts = airtable_client.get_active_accounts()
             self.logger.debug("Finished calling get_active_accounts")
