@@ -21,7 +21,9 @@ airtable:
       base_id: "${MADDISON_BASE_ID}"
       active_accounts_table: "${MADDISON_ACTIVE_ACCOUNTS_TABLE_ID}"
       content_table: "${MADDISON_POSTED_CONTENT_TABLE_ID}"
-      view_history: "${MASSISON_VIEW_HISTORY_TABLE_ID}"
+      view_history: "${MADDISON_VIEW_HISTORY_TABLE_ID}"
+      follower_history: "${MADDISON_FOLLOWER_HISTORY_TABLE_ID}"
+
 
     # Example of how to add additional bases:
     # second_base:

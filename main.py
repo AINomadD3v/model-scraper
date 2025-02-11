@@ -10,7 +10,7 @@ import os
 from typing import Dict, Any, Union, List
 import yaml
 from dotenv import load_dotenv
-
+from datetime import datetime
 from pyairtable import Api
 from pyairtable.formulas import match
 
@@ -108,11 +108,23 @@ class Config:
         return cast(Dict[str, str], instagram_config)
 
     def get_bases(self) -> Dict[str, Dict[str, str]]:
+        """Get base configurations with environment variable resolution"""
         try:
             bases = self.config['airtable']['bases']
+            
+            # For each base, check if we need to load the follower history table from env
+            for base_name, base_config in bases.items():
+                if 'follower_history' not in base_config:
+                    follower_history_table = os.getenv('MADDISON_FOLLOWER_HISTORY_TABLE_ID')
+                    if not follower_history_table:
+                        raise ValueError("MADDISON_FOLLOWER_HISTORY_TABLE_ID environment variable not set")
+                    base_config['follower_history'] = follower_history_table
+                    
+            return cast(Dict[str, Dict[str, str]], bases)
         except KeyError:
             raise ValueError("Airtable bases configuration not found")
-        return cast(Dict[str, Dict[str, str]], bases)
+
+    
 
     def get_airtable_api_key(self) -> str:
         try:
@@ -235,33 +247,37 @@ class InstagramAPI:
 class AirtableClient:
     def __init__(self, api_key: str, base_config: Dict):
         """Initialize Airtable client for specific base"""
-        # Set up logger first
         self.logger = logging.getLogger(__name__)
         
         self.logger.debug("Initializing AirtableClient")
         self.logger.debug(f"Base config: {base_config}")
         
-        # Then initialize the rest
         self.api = Api(api_key)
         self.base_id = base_config['base_id']
         self.logger.debug(f"Base ID: {self.base_id}")
+        
+        # Initialize all tables
         self.accounts_table = self.api.table(self.base_id, base_config['active_accounts_table'])
         self.content_table = self.api.table(self.base_id, base_config['content_table'])
+        self.view_history = self.api.table(self.base_id, base_config['view_history'])
+        self.follower_history = self.api.table(self.base_id, base_config['follower_history'])
+        
         self.logger.debug("AirtableClient initialization complete")
 
 
     # In AirtableClient class, modify get_active_accounts:
-    def get_active_accounts(self) -> List[Tuple[str, str]]:
-        """Get active accounts from base"""
+    def get_active_accounts(self) -> List[Tuple[str, str, int]]:  # Updated return type to include followers
+        """Get active accounts from base with their follower counts"""
         try:
-            print("Getting formula...")  # Temporary print for debugging
             formula = match({"Status": "Active"})
-            
-            print("About to query Airtable...")  # Temporary print for debugging
             records = self.accounts_table.all(formula=formula)
             
             active_accounts = [
-                (record['id'], record['fields'].get('Username'))
+                (
+                    record['id'],
+                    record['fields'].get('Username'),
+                    record['fields'].get('Followers', 0)  # Get current follower count
+                )
                 for record in records if 'Username' in record.get('fields', {})
             ]
             
@@ -270,39 +286,145 @@ class AirtableClient:
 
         except Exception as e:
             self.logger.error(f"Failed to fetch active accounts: {e}")
-            raise  # Add raise here to see the actual error
+            raise
+
+    
 
     def update_historical_views(self) -> None:
-        """Update historical view counts"""
-        self.logger.info("Updating historical view counts")
+        """Update view history records for all content"""
+        self.logger.info("Creating new view history records")
         try:
             records = self.content_table.all()
-            updates = []
+            history_records = []
+            current_date: str = datetime.now().strftime("%Y-%m-%d")
             
             for record in records:
                 fields = record.get('fields', {})
-                current_views = fields.get('Views', fields.get('View Count'))
+                current_views = fields.get('Views', 0)
+                previous_views = fields.get('Previous Views', 0)
+                account_links = fields.get('Account', [])  # Get the linked account(s)
                 
-                if current_views is not None:
-                    updates.append({
-                        'id': record['id'],
-                        'fields': {
-                            'Previous Views': current_views
-                        }
-                    })
+                # Create view history record with account link
+                history_record = {
+                    'Date': current_date,
+                    'Content ID': fields.get('ID'),
+                    'Content': [record['id']],
+                    'Account': account_links,  # Link to the same account(s) as the content
+                    'View Count': current_views,
+                    'Previous Day Views': previous_views,
+                    'Daily Change': current_views - previous_views
+                }
+                history_records.append(history_record)
+                
+                # Update the content record's Previous Views
+                self.content_table.update(record['id'], {
+                    'Previous Views': current_views
+                })
             
+            # Batch create history records
             batch_size = 10
-            for i in range(0, len(updates), batch_size):
-                batch = updates[i:i + batch_size]
-                self.content_table.batch_update(batch)
-                self.logger.debug(f"Updated batch {i//batch_size + 1}")
+            for i in range(0, len(history_records), batch_size):
+                batch = history_records[i:i + batch_size]
+                self.view_history.batch_create(batch)
+                self.logger.debug(f"Created history batch {i//batch_size + 1}")
                 time.sleep(1)  # Rate limiting
             
-            self.logger.info(f"Updated {len(updates)} records with historical views")
+            self.logger.info(f"Created {len(history_records)} view history records")
             
         except Exception as e:
-            self.logger.error(f"Failed to update historical views: {e}")
+            self.logger.error(f"Failed to update view history: {e}")
             raise
+
+    def update_historical_followers(self) -> None:
+        """Update follower history records for all accounts"""
+        self.logger.info("Creating new follower history records")
+        try:
+            # Get active accounts with their current follower counts
+            active_accounts = self.get_active_accounts()
+            history_records = []
+            current_date: str = datetime.now().strftime("%Y-%m-%d")
+            
+            for account_id, username, current_followers in active_accounts:
+                # Create follower history record
+                history_record = {
+                    'Date': current_date,
+                    'Account': [account_id],
+                    'Follower Count': current_followers,
+                    'Previous Day Followers': current_followers,  # Use current followers as previous day
+                    'Daily Change': 0  # First day will show 0 change
+                }
+                history_records.append(history_record)
+            
+            # Batch create history records
+            batch_size = 10
+            for i in range(0, len(history_records), batch_size):
+                batch = history_records[i:i + batch_size]
+                self.follower_history.batch_create(batch)
+                self.logger.debug(f"Created follower history batch {i//batch_size + 1}")
+                time.sleep(1)  # Rate limiting
+            
+            self.logger.info(f"Created {len(history_records)} follower history records")
+            
+        except Exception as e:
+            self.logger.error(f"Failed to update follower history: {e}")
+            raise
+
+    def upsert_content(self, content_data: Dict[str, Any]) -> bool:
+        """Insert or update content with view history tracking"""
+        try:
+            content_id = content_data.get('id')
+            formatted_data = self._format_content_data(content_data)
+            current_views = formatted_data.get('Views', 0)
+            account_links = formatted_data.get('Account', [])  # Get account links
+            
+            # Check if content exists
+            existing_records = self.content_table.all(formula=f"ID='{content_id}'")
+            
+            if existing_records:
+                record_id = existing_records[0]['id']
+                previous_views = existing_records[0].get('fields', {}).get('Views', 0)
+                
+                # Update content record
+                self.content_table.update(record_id, formatted_data)
+                self.logger.info(f"Updated content: {content_id}")
+                
+                # Create view history record
+                current_date: str = datetime.now().strftime("%Y-%m-%d")
+                history_record = {
+                    'Date': current_date,
+                    'Content ID': content_id,
+                    'Content': [record_id],
+                    'Account': account_links,  # Add account link
+                    'View Count': current_views,
+                    'Previous Day Views': previous_views,
+                    'Daily Change': current_views - previous_views
+                }
+                self.view_history.create(history_record)
+                self.logger.info(f"Created view history record for content: {content_id}")
+            else:
+                # Create new content record
+                new_record = self.content_table.create(formatted_data)
+                self.logger.info(f"Created new content: {content_id}")
+                
+                # Create initial view history record
+                current_date: str = datetime.now().strftime("%Y-%m-%d")
+                history_record = {
+                    'Date': current_date,
+                    'Content ID': content_id,
+                    'Content': [new_record['id']],
+                    'Account': account_links,  # Add account link
+                    'View Count': current_views,
+                    'Previous Day Views': current_views,
+                    'Daily Change': 0
+                }
+                self.view_history.create(history_record)
+                self.logger.info(f"Created initial view history record for content: {content_id}")
+
+            return True
+
+        except Exception as e:
+            self.logger.error(f"Failed to upsert content: {e}")
+            return False
 
     def update_account(self, account_id: str, account_data: Dict[str, Any]) -> bool:
         """Update account information"""
@@ -316,34 +438,7 @@ class AirtableClient:
             self.logger.error(f"Failed to update account {account_id}: {e}")
             return False
 
-    def upsert_content(self, content_data: Dict[str, Any]) -> bool:
-        """Insert or update content"""
-        try:
-            formatted_data = self._format_content_data(content_data)
-            content_id = formatted_data.get('ID')
-
-            if not content_id:
-                self.logger.warning("Skipping content with missing ID")
-                return False
-
-            existing_records = self.content_table.all(formula=f"ID='{content_id}'")
-            
-            if existing_records:
-                record_id = existing_records[0]['id']
-                self.content_table.update(record_id, formatted_data)
-                self.logger.info(f"Updated content: {content_id}")
-            else:
-                self.content_table.create(formatted_data)
-                self.logger.info(f"Created new content: {content_id}")
-
-            return True
-
-        except Exception as e:
-            self.logger.error(f"Failed to upsert content: {e}")
-            return False
-
-    @staticmethod
-    def _format_content_data(post_data: Dict[str, Any]) -> Dict[str, Any]:
+    def _format_content_data(self, post_data: Dict[str, Any]) -> Dict[str, Any]:
         """Format post data for Airtable"""
         caption = post_data.get('caption', {})
         if isinstance(caption, str):
@@ -365,7 +460,7 @@ class AirtableClient:
             'Comments': post_data.get('comment_count'),
             'Content': [{"url": post_data.get('video_url')}] if post_data.get('video_url') else None,
             'Thumbnail': [{"url": post_data.get('thumbnail_url')}] if post_data.get('thumbnail_url') else None,
-            'Views': post_data.get('play_count', 0)  # Added this line
+            'Views': post_data.get('play_count', 0)
         }
 
     @staticmethod
@@ -424,6 +519,7 @@ class InstagramScraper:
             # First, update historical views
             self.logger.info(f"Updating historical views for base: {base_name}")
             airtable_client.update_historical_views()
+            airtable_client.update_historical_followers()
 
             self.logger.debug("About to call get_active_accounts")
             active_accounts = airtable_client.get_active_accounts()
@@ -436,7 +532,7 @@ class InstagramScraper:
             total_accounts = len(active_accounts)
             self.logger.info(f"Found {total_accounts} active accounts in {base_name}")
             
-            for i, (account_id, username) in enumerate(active_accounts, 1):
+            for i, (account_id, username, _) in enumerate(active_accounts, 1):  # Note the _ to ignore followers here
                 self.logger.info(f"[{i}/{total_accounts}] Processing account: {username}")
                 try:
                     self.process_account(account_id, username, airtable_client)
@@ -482,17 +578,94 @@ class InstagramScraper:
 def main():
     """Main function to run the Instagram scraper"""
     try:
+        logging.info("🚀 Starting Instagram scraper")
+        
+        # Initialize and validate config
         config = Config()
         logging.info("✅ Configuration validated successfully")
         
+        # Initialize scraper
         scraper = InstagramScraper(config)
+        logging.info("✅ Scraper initialized")
+        
+        # Process all bases (now includes both view and follower history)
+        logging.info("📊 Starting data collection and history tracking")
         scraper.process_all_bases()
-        logging.info("✅ Scraping completed successfully")
+        logging.info("✅ Successfully completed data collection and history tracking")
+        
+        logging.info("✨ All operations completed successfully")
     
     except Exception as e:
         logging.error(f"❌ Fatal error: {str(e)}", exc_info=True)
         import traceback
         logging.error(f"Stack trace:\n{traceback.format_exc()}")
         sys.exit(1)
+
 if __name__ == "__main__":
+    # Configure logging with timestamps
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    )
     main()
+
+# def test_follower_history():
+#     """Test function to verify follower history functionality"""
+#     try:
+#         # Initialize config
+#         config = Config()
+#         logging.info("✅ Configuration loaded")
+#
+#         # Get the first base config
+#         bases = config.get_bases()
+#         if not bases:
+#             logging.error("❌ No bases found in configuration")
+#             return
+#
+#         base_name = next(iter(bases))
+#         base_config = bases[base_name]
+#         logging.info(f"🔍 Testing with base: {base_name}")
+#
+#         # Initialize Airtable client
+#         airtable_client = AirtableClient(
+#             config.get_airtable_api_key(),
+#             base_config
+#         )
+#         logging.info("✅ Airtable client initialized")
+#
+#         # Test getting active accounts
+#         try:
+#             active_accounts = airtable_client.get_active_accounts()
+#             logging.info(f"✅ Found {len(active_accounts)} active accounts")
+#
+#             # Print first few accounts for verification
+#             for i, (account_id, username, followers) in enumerate(active_accounts[:3], 1):
+#                 logging.info(f"  Account {i}: {username} (ID: {account_id}, Followers: {followers})")
+#
+#         except Exception as e:
+#             logging.error(f"❌ Failed to get active accounts: {str(e)}")
+#             return
+#
+#         # Test follower history update
+#         try:
+#             airtable_client.update_historical_followers()
+#             logging.info("✅ Follower history updated successfully")
+#         except Exception as e:
+#             logging.error(f"❌ Failed to update follower history: {str(e)}")
+#             return
+#
+#         logging.info("✅ All tests completed successfully")
+#
+#     except Exception as e:
+#         logging.error(f"❌ Test failed with error: {str(e)}")
+#         import traceback
+#         logging.error(f"Stack trace:\n{traceback.format_exc()}")
+#
+# if __name__ == "__main__":
+#     # Setup basic logging
+#     logging.basicConfig(
+#         level=logging.INFO,
+#         format='%(asctime)s - %(levelname)s - %(message)s'
+#     )
+#     test_follower_history()    
+
