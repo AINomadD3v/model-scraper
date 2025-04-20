@@ -36,4 +36,4 @@ airtable:
 # Instagram API configuration
 instagram:
   api_key: "${RAPIDAPI_KEY}"
-  host: "instagram-scraper-api2.p.rapidapi.com"
+  host: "social-api4.p.rapidapi.com"
