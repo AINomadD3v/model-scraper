@@ -101,33 +101,11 @@ class Config:
             raise ValueError("Instagram configuration not found")
         return cast(Dict[str, str], instagram_config)
 
-    def get_bases(self) -> Dict[str, Dict[str, str]]:
-        """Get base configurations with environment variable resolution"""
-        try:
-            bases = self.config["airtable"]["bases"]
-
-            # For each base, check if we need to load the follower history table from env
-            for base_name, base_config in bases.items():
-                if "follower_history" not in base_config:
-                    follower_history_table = os.getenv(
-                        "ALEXIS_FOLLOWER_HISTORY_TABLE_ID"
-                    )
-                    if not follower_history_table:
-                        raise ValueError(
-                            "ALEXIS_FOLLOWER_HISTORY_TABLE_ID environment variable not set"
-                        )
-                    base_config["follower_history"] = follower_history_table
-
-            return cast(Dict[str, Dict[str, str]], bases)
-        except KeyError:
-            raise ValueError("Airtable bases configuration not found")
-
-    def get_airtable_api_key(self) -> str:
-        try:
-            api_key = self.config["airtable"]["api_key"]
-        except KeyError:
-            raise ValueError("Airtable API key not found in configuration")
-        return cast(str, api_key)
+    def get_airtable_config(self) -> Dict[str, str]:
+        airtable_config = self.config.get("airtable")
+        if not airtable_config:
+            raise ValueError("Airtable configuration not found")
+        return cast(Dict[str, str], airtable_config)
 
     def validate_config(self) -> None:
         required_settings = {

@@ -1,6 +1,7 @@
 import logging
 from src.config import Config
 from src.scraper import InstagramScraper
+from src.airtable_client import AirtableClient
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -11,23 +12,37 @@ def test_scraper_live():
     This test will make real API calls to Instagram and Airtable.
     """
     try:
-        # --- Configuration ---
-        # Set this to True to scrape content (posts).
-        # Set to False to only update account profiles.
-        scrape_content = False
-
-        logging.info(f"--- Starting Live Scraper Test (scrape_content={scrape_content}) ---")
+        logging.info(f"""--- Starting Live Scraper Test ---""")
 
         # Load configuration
         config = Config(config_path='config.yaml')
+        airtable_config = config.get_airtable_config()
+
+        # Initialize AirtableClient
+        airtable_client = AirtableClient(
+            api_key=airtable_config["api_key"],
+            base_id=airtable_config["base_id"],
+            active_accounts_table=airtable_config["active_accounts_table"],
+        )
 
         # Initialize InstagramScraper
-        scraper = InstagramScraper(config, scrape_content=scrape_content)
+        scraper = InstagramScraper(config)
 
-        # --- Run the Scraper ---
-        logging.info("Calling process_all_bases...")
-        scraper.process_all_bases()
-        logging.info("--- Scraper Test Finished ---")
+        # --- Get a single username from Airtable ---
+        logging.info("Fetching a single active account from Airtable...")
+        active_accounts = airtable_client.get_active_accounts(max_records=1)
+
+        if not active_accounts:
+            logging.warning("No active accounts found in Airtable to test with.")
+            return
+
+        account_id, username, _ = active_accounts[0]
+        logging.info(f"Using username: {username} (ID: {account_id}) for scraper test.")
+
+        # --- Run the Scraper for the single username ---
+        logging.info(f"Calling process_account for {username}...")
+        scraper.process_account(account_id, username, airtable_client)
+        logging.info("""--- Scraper Test Finished ---""")
 
     except Exception as e:
         logging.error(f"An error occurred during the live scraper test: {e}", exc_info=True)

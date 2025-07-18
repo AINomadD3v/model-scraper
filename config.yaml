@@ -16,13 +16,8 @@ rate_limits:
 # Airtable configuration
 airtable:
   api_key: "${AIRTABLE_API_KEY}"
-  bases:
-    alexis:
-      base_id: "${ALEXIS_BASE_ID}"
-      active_accounts_table: "${ALEXIS_ACTIVE_ACCOUNTS_TABLE_ID}"
-      content_table: "${ALEXIS_POSTED_CONTENT_TABLE_ID}"
-      view_history: "${ALEXIS_VIEW_HISTORY_TABLE_ID}"
-      # follower_history will be injected from env if missing
+  base_id: "${ACCOUNT_ARMY_BASE_ID}"
+  active_accounts_table: "${ACTIVE_ACCOUNTS_TABLE_ID}"
 
 # ✅ Instagram API configuration — this was missing
 instagram:

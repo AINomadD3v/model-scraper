@@ -15,9 +15,6 @@ def main():
     try:
         parser = argparse.ArgumentParser(description="Instagram scraper")
         parser.add_argument(
-            "--content", action="store_true", help="Also scrape posts/content"
-        )
-        parser.add_argument(
             "--username", type=str, help="Process a single username (profile only)"
         )
         args = parser.parse_args()
@@ -28,32 +25,31 @@ def main():
         logging.info("✅ Configuration validated successfully")
 
         # Initialize scraper with flag
-        scraper = InstagramScraper(config, scrape_content=args.content)
+        scraper = InstagramScraper(config)
         logging.info("✅ Scraper initialized")
 
         if args.username:
             # Single account profile scraping mode
             logging.info(f"🔍 Scraping profile for {args.username}")
-            base_configs = config.get_bases()
-            for base_name, base_config in base_configs.items():
-                airtable_client = AirtableClient(
-                    config.get_airtable_api_key(), base_config
+            airtable_config = config.get_airtable_config()
+            airtable_client = AirtableClient(
+                api_key=airtable_config["api_key"],
+                base_id=airtable_config["base_id"],
+                active_accounts_table=airtable_config["active_accounts_table"],
+            )
+            # Attempt to find account ID from Airtable by username
+            records = airtable_client.accounts_table.all(
+                formula=match({"Username": args.username})
+            )
+            if not records:
+                logging.warning(
+                    f"⚠️ Username '{args.username}' not found in base"
                 )
-                # Attempt to find account ID from Airtable by username
-                records = airtable_client.accounts_table.all(
-                    formula=match({"Username": args.username})
-                )
-                if not records:
-                    logging.warning(
-                        f"⚠️ Username '{args.username}' not found in base: {base_name}"
-                    )
-                    continue
+            else:
                 account_id = records[0]["id"]
                 scraper.process_account(account_id, args.username, airtable_client)
                 logging.info("✅ Single account profile scraping completed")
-                break
-            else:
-                logging.error(f"❌ Username '{args.username}' not found in any base")
+
         else:
             # Normal full-base mode
             logging.info("📊 Starting data collection and history tracking")

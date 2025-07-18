@@ -1,0 +1,31 @@
+{
+   "mcpServers": {
+        "airtable": {
+      "command": "/home/ai-dev/bin/mcp-launch.sh",
+      "args": [
+        "/home/ai-dev/MCP/airtable-mcp-server/secrets/airtable.env",
+        "/home/ai-dev/MCP/airtable-mcp-server/dist/index.js"
+      ]
+    },
+
+     "nixos": {
+       "command": "nix",
+       "args": [
+         "run",
+         "github:utensils/mcp-nixos",
+         "--"
+       ]
+     },
+     "context7": {
+      "command": "npx",
+      "args": ["-y", "@upstash/context7-mcp"]
+    },
+        "github": {
+      "command": "/home/ai-dev/bin/github-mcp-wrapper.sh",
+      "args": []
+    }
+
+   }
+ }
+
+
